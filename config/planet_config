@@ -1,0 +1,15 @@
+#Planet Data. The format is reflected in this package's planetstruct module 
+#and used in the planets module; changes must be made consistent everywhere.
+#(This could be managed best with versioning, todo
+#Note, comments in this file must be preceded with the hash (#) character
+#and each line must end with a colon (:)
+Neptune:build/horizons_results_neptune_sb_41.txt:light blue:50:
+Uranus:build/horizons_results_uranus_sb_21.txt:pale turquoise:52:
+Saturn:build/horizons_results_saturn_sb_7.txt:gold:125:ring:
+Jupiter:build/horizons_results_jupiter_sb_3.txt:dark orange:143:
+Mars:build/horizons_results_mars_sb_1.txt:sandy brown:7:
+Earth:build/horizons_results_earth_sb_1.txt:light sea green:13:
+Venus:build/horizons_results_venus_1.txt:khaki:12:
+Mercury:build/horizons_results_mercury_1.txt:light yellow:5:
+$ #The $ terminates the planet list understood by the planets module. 
+
