@@ -59,7 +59,7 @@ Makefile                Used to build and run the project
                 horizons_results_venus_1.txt  
         /config          contains any configuration files  
                 planet_config  per-planet configuration information  
-<\pre>
+</pre>
 <p>
 
 ## Running the model <a name="running"></a>
