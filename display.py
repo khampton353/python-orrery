@@ -8,12 +8,14 @@
            planet objects through the controller. It also is responsible
            for calling destroy() when the user decides to exit or close the 
            window
+    1/26/2018
+    - use Tk event handling and exit logic more correctly
+    - remove unused code and comments
 '''
 
 from tkinter import *
 from tkinter import ttk
 import sys
-import time
 
 def calcpoints(pts, mult, center, func):
     ''' function passed to an orbit object (indirectly) to call to convert the 
@@ -64,18 +66,15 @@ class Display(Frame):
 
         self.scalefactor=1.0
         self.span = self.ctrl.getlargestspan()
-        #self.mult = 50 #todo, use screen geometry to calculate this
         self.mult = (vcw-100) //self.span  #scale orbits to virtual screen
 
-        self.cycle_periods=(10000, 750, 500, 250, 100, 50, 10, 0)
+        self.cycle_periods=(10000, 750, 500, 250, 100, 50, 10, 1)
         self.speed.set(4)
 
         self.sundim = 13                  #sun relative size//100          
         
         self.draworbits()
-        self.keepdrawing = True
         self.drawplanets()
-        self.ctrl.root.destroy()
 
     def makewinframe(self, screen, vcw, vch):
         ''' initialize all widgets in the main/drawing frame
@@ -91,33 +90,28 @@ class Display(Frame):
         ch = screen[1]/2                  # canvas height
 
         self.xscrbar = Scrollbar(
-                self, orient ='horizontal')
+                self, orient ='horizontal', activebackground='dark gray')
         self.xscrbar.grid(row = 1, column = 0, sticky = E+W)
         self.yscrbar = Scrollbar(
-                self, orient = 'vertical')
+                self, orient = 'vertical', activebackground='dark gray')
         self.yscrbar.grid(row = 0, column = 1, sticky = N+S)
 
         self.center = vcw/2, vch/2   
-        sr = self.center[0] - cw/2, self.center[1] - ch/2,\
-                self.center[0] + cw/2, self.center[1] + ch/2
 
-        #todo, center initial view 
         self.canvas1 = Canvas(self, width=cw, height=ch, background="black",\
                 xscrollcommand = self.xscrbar.set,\
                 scrollregion = (0,0,vcw,vch), \
-                #scrollregion = sr, \
                 yscrollcommand = self.yscrbar.set)
         self.canvas1.grid(row=0, column=0, sticky = N+S+E+W)
         self.xscrbar.config(command = self.canvas1.xview)
         self.yscrbar.config(command = self.canvas1.yview)
-
 
     def maketopframe(self):
         ''' make the user cmds frame '''
         self.topfr = Frame(self, bg='white')
         self.keepdrawing = True
         self.exit = Button(self.topfr,text = 'Exit', \
-                command = self.stopdrawing)
+                command = self.ctrl.root.destroy)
         self.speedlabel = Label(self.topfr, text = '     Orbit speed:', \
                 justify='right',\
                 bg='white') #keep the slider slim, precede with title
@@ -154,11 +148,7 @@ class Display(Frame):
         self.canvas1.create_oval(self.center[0]-sunrad, self.center[1]-sunrad, \
                 self.center[0]+sunrad, self.center[1]+sunrad, fill = 'yellow', \
                 tags = 'sun')
-
-    def stopdrawing(self):
-        ''' tell drawplanets to stop and exit '''
-        self.keepdrawing=False
-
+        self.canvas1.update()
 
     def drawplanets(self):
         ''' The movement engine for the planets. at cycle_periods intervals it
@@ -170,23 +160,21 @@ class Display(Frame):
         '''
         pscale = .1
         rad = 0.0
-        while self.keepdrawing:
-            plst = self.ctrl.getplanetsdata()
-
-            for p in plst:
-                if p['DRAW']:
-                    self.canvas1.delete(p['NAME'])
-                    rad = self.scalefactor * pscale * p['SIZE']
-                    self.canvas1.create_oval(p['XLOC']-rad, p['YLOC']-rad, \
-                        p['XLOC']+rad, p['YLOC']+rad, fill = p['COLOR'],\
-                        tags = ('planet', p['NAME']), outline = p['COLOR'])
-                    if p['RING']:
-                        rad = 1.5 * rad
-                        self.canvas1.create_line(p['XLOC']-rad, p['YLOC']-rad, \
-                            p['XLOC']+rad, p['YLOC']+rad, fill = p['COLOR'],\
-                            tags = ('planet', p['NAME']), width = 2)
-            self.canvas1.update()
-            self.canvas1.after(self.cycle_periods[self.speed.get()])
+        plst = self.ctrl.getplanetsdata()
+        for p in plst:
+            if p['DRAW']:
+                self.canvas1.delete(p['NAME'])
+                rad = self.scalefactor * pscale * p['SIZE']
+                self.canvas1.create_oval(p['XLOC']-rad, p['YLOC']-rad, \
+			p['XLOC']+rad, p['YLOC']+rad, fill = p['COLOR'],\
+			tags = ('planet', p['NAME']), outline = p['COLOR'])
+                if p['RING']:
+                    rad = 1.5 * rad
+                    self.canvas1.create_line(p['XLOC']-rad, p['YLOC']-rad, \
+			    p['XLOC']+rad, p['YLOC']+rad, fill = p['COLOR'],\
+			    tags = ('planet', p['NAME']), width = 2)
+        self.canvas1.after(self.cycle_periods[self.speed.get()], \
+                self.drawplanets)
 
     #todo, add mousewheel zoom support, consider limits on zooming
     def zoom(self, val):
@@ -197,5 +185,4 @@ class Display(Frame):
         '''
         self.scalefactor *= 2 if val else .5
         self.draworbits()
-
 
