@@ -19,7 +19,8 @@
             sample interval in minutes
             max and min x and y coordinates for the orbit
             location to use for initial planet placement in the orbit
-            sequence of floats with the x and y positions taken from each sample
+            Julian date of the start of the orbit
+            list of floats with the x and y positions taken from each sample
     The coordinates are extracted from a complete orbit of the planet around 
     the sun. The orbit starts and ends at either planet's closest or farthest 
     positions from the sun nearest to the target target date of 1/25/2018
@@ -27,6 +28,14 @@
 
     The layout for the output file is in planetstructs.py 
 
+'''
+'''  Changes:
+     1/25/2018
+     -Read file once and save all parsed samples in a list. There will be at 
+      most a few thousand samples. That will save the second partial pass 
+      through the file and eliminate the need to save the file position.
+     -only collect the largest dimension ranges on the chosen orbit
+     -move Planet sample here from planetstructs.py and remove the filepos
 '''
 
 import sys
@@ -60,6 +69,19 @@ def getinit(f):
                 interval = int(lne.split()[2])
     return name, interval
 
+
+'''
+#data extracted from a 4-record planet sample in a JPL ephemeris and
+converted to floats
+-Julian date of the sample;
+-distance in Astronomical units from the sun;
+-x, y,and zcoordinates
+'''
+Planetsample = namedtuple('Planetsample', [
+    'jdate',
+    'distance',
+    'ccoords'
+    ])
 def getsample(f):
     ''' extract information from a 4-line data record. 
         Expects the file position to be aligned at the record.
@@ -73,9 +95,10 @@ def getsample(f):
         Example line 4 (RG is distance to the sun in AUs):
          LT= 8.194971050395787E-03 RG= 1.418915252296812E+00 RR= 9.47995979...
         f: planet data file object
+        returns: a namedtuple with the sample date for the record, its
+                 distance from the sun, and its Cartesian coordinates
     '''
     lst = []
-    pos = f.tell()
     lne = f.readline() 
     if lne[1] == '$': # end of records delineation $$$EOE 
         raise ValueError('End of Records')
@@ -88,95 +111,7 @@ def getsample(f):
         rg = None
     else:
         rg = float(lne.split('=')[2].split()[0])
-    return ps.Planetsample(pos, date, rg, cc)
-
-
-def getcmpsample(f, szs):
-    ''' wrapper for getsammple that contains the 'side-effect' of updating 
-        the szs list with the smallest/largest x and y coordinates (ignoring
-        the z coord for now)
-        f: planet data file object
-    '''
-    s = getsample(f)
-    lst = s.ccoords
-    if lst.x > szs[0]: szs[0] = lst.x #largest x
-    elif lst.x < szs[1]: szs[1] = lst.x #smallest x (most negative 
-    if lst.y > szs[2]: szs[2] = lst.y #largest y
-    elif lst.y < szs[3]: szs[3] = lst.y #smallest y (most negative 
-    return s
-
-
-def getorbitrecords(far, near):
-    ''' given a list of 1 or more aphelions and another with 1 or more 
-        perihelions, return the file positions for the start of the most recent
-        two *helions, which will delineate the points of the captured orbit.
-        Expects at least one of the lists to have at least two samples, which 
-        would comprise a complete orbit. 
-        far: list of Planetsample for aphelion positions
-        near: list of Planetsample for perihelion positions
-        returns: orbit file positions 
-    '''
-    lst = far if len(near) < 2 else far if far[-1][0] > near[-1][0] \
-            else near
-    return lst[-2].filepos, lst[-1].filepos #filepos of last two *helions
-
-
-#named tuple used to pass data to main()
-Planetvalues = namedtuple('Planetvalues', [
-    'planet', 'interval', 'lastfilepos', 'orbitstart', 'nextorbit',
-    'coordextremes'])
-
-def getvals(f):
-    ''' parse the file to find aphelion and perihelion dates, used to
-        construct the orbit drawing. Expects a well-formed Vector file with
-        samples at least 1.5 orbits and sample records between two strings
-        '$$$SOE' and '$$$EOE'. Also: expects the data samples to be 
-        generated without 'bobbles' that create false positives for aphelion
-        and perihelion. (Hint, use barycenter coordinates for source, target)
-        Note that the first record can be safely ignored. Even if it is at
-        x*helion, it wouldn't be part of the final orbit.
-        f: planet data file object
-    '''
-    smallest = [] #list of samples at perihelion 
-    biggest = []  #list of samples at aphelion
-    lst=[None] * 2
-    mbp = 0 #set if a date 'might-be-perihelion' (nearest the sun)
-    mba = 0 #set if a date 'might-be-aphelion' (farthest)
-    icurr = 0
-    inext = 1
-    szs = [0.0] * 4 #largest/smallest x coord, largest/smallest y coord
-    poslast = 0
-    name, interval = getinit(f) #leaves file position at first sample
-    s = getcmpsample(f, szs) #don't keep it, can't be trusted as a real *helion 
-    lst[0] = getcmpsample(f, szs)
-    if lst[0].distance < s.distance:
-        mbp = True
-    else:
-        mba = True
-    
-    records = 1
-    while records:
-        try:
-            inext = (icurr+1) & 1
-            lst[inext] = getcmpsample(f, szs)
-            if lst[inext].distance > lst[icurr].distance:
-                if mbp:
-                    smallest.append(lst[icurr])
-                    mbp = 0
-                else:
-                    mba = 1
-            else:
-                if mba:
-                    biggest.append(lst[icurr])
-                    mba = 0
-                else:
-                    mbp = 1
-            poslast = lst[inext].filepos
-            icurr = inext
-        except ValueError as v: # assuming got to end of samples
-            records = 0
-    ostart, olast = getorbitrecords(biggest, smallest)
-    return Planetvalues(name, interval, poslast, ostart, olast, tuple(szs))
+    return Planetsample(date, rg, cc)
 
 
 
@@ -200,60 +135,110 @@ def closest(olst, curr):
             diff = delta
             idx = samp[0]
     return idx
-    
-def getorbit(f, first, last, curr):
-    ''' given the start and ~end file positions for the most recent complete 
-        orbit at apihelion or perihelion, and a target date, return a list of 
-        coordinates and an index of a coordinate pair in the list nearest to 
-        the coordinates of the date in curr
-        f: file object of planet data input file
-        first, last: file positions for orbit nearest to date of curr
-        curr: Planetsample at file's final sample date
-        returns: a tuple of the list of the orbits coordinates and location
-                 of the coordinate pair closest to curr.ccoords
-    '''
-    pos = first
-    olst = []
-    coords = curr.ccoords  #x,y,z position at the target date
 
+
+
+def getorbit(slst, first, last):
+    ''' given the list of sample data and the start and end indices for the 
+        most recent complete orbit at apihelion or perihelion, create a list of 
+        x and y coordinates for the orbit, determine the largest and smallext 
+        x and y values, and get the index of the point closest to the final
+        sample taken. Note that 'last' is the start of the next, incomplete
+        orbit.
+        slst: the complete list of samples
+        first, last: indices for a complete orbit + 1 sample
+        returns: the index of the orbital point closest to the last point, a 
+                 tuple with the coordinate extremes, and anarray with the 
+                 orbit coordinates
+    '''
+    olst = []
+    coords = slst[-1].ccoords  #x,y,z position at the target date
+    szs = [0.0] * 4 #largest/smallest x coord, largest/smallest y coord
     citm = [] #collection of samples that fall within a given distance
-    idx = 0   #number each sample, used to id planet start position in orbit  
-    f.seek(first,0)
-    lst = []
-    while pos < last:
-        info = getsample(f)
-        cs = info.ccoords #coordinates
+    idx = 0   #number each sample, used to id planet start position in orbit 
+    cnt = last - first
+    while idx < cnt:
+        cs = slst[idx + first].ccoords #coordinates
+        if cs.x > szs[0]: szs[0] = cs.x #largest x
+        elif cs.x < szs[1]: szs[1] = cs.x #smallest x (most negative 
+        if cs.y > szs[2]: szs[2] = cs.y #largest y
+        elif cs.y < szs[3]: szs[3] = cs.y #smallest y (most negative 
         olst.append(cs.x) #tkinter polygon needs x and y coords in series
         olst.append(cs.y) 
-        pos = info.filepos
         if abs(cs.x - coords.x) < eps and abs(cs.y - coords.y) < eps: 
             citm.append((idx, cs,))
         idx += 1
     if len(citm) > 1:
-        idx = closest(citm, curr)
+        idx = closest(citm, slst[-1])
     else:
         idx = citm[0][0]
 
-    return olst, idx
+    return idx, tuple(szs), olst
 
+
+def getorbitdata(f):
+    ''' parse the file to find aphelion and perihelion dates, used to
+        construct the orbit drawing. Expects a well-formed Vector file with
+        samples at least 1.5 orbits and sample records between two strings
+        '$$$SOE' and '$$$EOE'. Also: expects the data samples to be 
+        generated without 'bobbles' that create false positives for aphelion
+        and perihelion. (Hint, use barycenter coordinates for source, target)
+        Note that the first record can be safely ignored. Even if it is at
+        ap/perihelion, it wouldn't be part of the final chosen orbit. The
+        last record can also be ignored as long as the 1.5+ orbits predicate 
+        is met
+        f: planet data file object
+        returns: the Planetvalues namedTuple for the collected data
+    '''
+    smallest = [] #list of samples at perihelion 
+    biggest = []  #list of samples at aphelion
+    mbp = 0 #set if a date 'might-be-perihelion' (nearest the sun)
+    mba = 0 #set if a date 'might-be-aphelion' (farthest)
+    slst = [None] #lst of all parsed records minus the first
+    name, interval = getinit(f) #leaves file position at first sample
+    s = getsample(f) #don't keep it, can't be trusted as a real *helion 
+    slst[0] = getsample(f)
+    if slst[0].distance < s.distance:
+        mbp = True
+    else:
+        mba = True
+    records = 1
+    idx = 0
+    while records:
+        try:
+            slst.append(getsample(f))
+            if slst[-1].distance > slst[-2].distance:
+                if mbp:
+                    smallest.append((idx, slst[-2],))
+                    mbp = 0
+                else:
+                    mba = 1
+            else:
+                if mba:
+                    biggest.append((idx, slst[-2],))
+                    mba = 0
+                else:
+                    mbp = 1
+            idx += 1
+        except ValueError as v: # assuming got to end of samples
+            records = 0
+    lst = biggest if biggest[-1][0] > smallest[-1][0] else smallest
+    istart, ilast =  lst[-2][0], lst[-1][0] #record indices of last two *helions
+    cidx, szs, oarr = getorbit(slst, istart, ilast)
+    return ps.Orbitdata(name, interval, szs, cidx, slst[istart].jdate, oarr)
+
+    
 if __name__ == '__main__':
     if len(sys.argv) > 1:
         st = sys.argv[1]
     else:
         print('No orbit data file provided, exiting')
         sys.exit(0)
-    oname = ''
-    olst = []
-    vals=''
-    citm=''
+    odata = None
     with open(st, 'r') as f:
-        vals = getvals(f)
-        f.seek(vals.lastfilepos, 0)  #data record for target orbital start date
-        vals2 = getsample(f)
-        olst, citm = getorbit(f, vals.orbitstart, vals.nextorbit, vals2)
-    oname = 'bin/bin{}.pkl'.format(vals.planet)
+        odata = getorbitdata(f)
+    oname = 'bin/bin{}.pkl'.format(odata.planetname)
     with open(oname, 'wb') as ofile:
-        pickle.dump(ps.Orbitdata(vals.planet, vals.interval, vals.coordextremes,
-                citm, olst), ofile)
+        pickle.dump(odata, ofile)
 
 
