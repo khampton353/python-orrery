@@ -1,7 +1,12 @@
-.PHONY: build
-run: build
+.PHONY: clean build
+BINDIR = ./bin
+
+run: | $(BINDIR)
 	python3 orrery.py
-build: 
+build:
+	python3 builder.py
+$(BINDIR):
+	mkdir bin
 	python3 builder.py
 prepUbuntu:
 	sudo apt-get update
@@ -9,11 +14,14 @@ prepUbuntu:
 	sudo apt-get install python3-tk
 
 clean-build:
-	-rm bin/*
-clean: clean-build
-	if [ -d "__pycache__" ]; then\
-		rm __pycache__/*;\
-		rmdir __pycache__;\
-	fi
+	@rm bin/*  2> /dev/null || true
+	@rmdir bin 2> /dev/null || true
+
+clean-py:
+	@rm -f __pycache__/* 
+	@rmdir __pycache__ 2>/dev/null || true 
+
+clean: clean-build clean-py; 
+
 
 

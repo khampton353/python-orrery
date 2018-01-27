@@ -8,9 +8,21 @@
            planet objects through the controller. It also is responsible
            for calling destroy() when the user decides to exit or close the 
            window
+'''
+''' Changes:
+    1/25/2018
+    - changes to support updating and using an array of doubles for the orbit
+      coordinates instead of a list of floats; calcpoints() now updates an array
+      in place instead of building and returning a list
     1/26/2018
     - use Tk event handling and exit logic more correctly
     - remove unused code and comments
+    1/26/2018
+    - added xview_moveto, yview_moveto to better position initial canvas display
+'''
+''' Known issues:
+    -Changing the scale should cancel-and-reschedule drawplanets immediately
+     instead of waiting the for the old interval to complete first
 '''
 
 from tkinter import *
@@ -68,11 +80,10 @@ class Display(Frame):
         self.span = self.ctrl.getlargestspan()
         self.mult = (vcw-100) //self.span  #scale orbits to virtual screen
 
-        self.cycle_periods=(10000, 750, 500, 250, 100, 50, 10, 1)
+        self.cycle_periods=(10000, 750, 500, 250, 100, 50, 20, 1)
         self.speed.set(4)
 
         self.sundim = 13                  #sun relative size//100          
-        
         self.draworbits()
         self.drawplanets()
 
@@ -105,6 +116,10 @@ class Display(Frame):
         self.canvas1.grid(row=0, column=0, sticky = N+S+E+W)
         self.xscrbar.config(command = self.canvas1.xview)
         self.yscrbar.config(command = self.canvas1.yview)
+        #set initial viewing position
+        self.canvas1.xview_moveto(.35)
+        self.canvas1.yview_moveto(.4)
+
 
     def maketopframe(self):
         ''' make the user cmds frame '''
@@ -173,7 +188,8 @@ class Display(Frame):
                     self.canvas1.create_line(p['XLOC']-rad, p['YLOC']-rad, \
 			    p['XLOC']+rad, p['YLOC']+rad, fill = p['COLOR'],\
 			    tags = ('planet', p['NAME']), width = 2)
-        self.canvas1.after(self.cycle_periods[self.speed.get()], \
+        per = self.speed.get()
+        self.canvas1.after(self.cycle_periods[per], \
                 self.drawplanets)
 
     #todo, add mousewheel zoom support, consider limits on zooming
