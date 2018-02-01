@@ -19,6 +19,12 @@
     - remove unused code and comments
     1/26/2018
     - added xview_moveto, yview_moveto to better position initial canvas display
+    1/31/2018
+    - deleted unneccessary code (call to getplanetsdata() in draworbits() and 
+      import ttk, leftover from earlier development phases)
+    - use grid manager for all geometry management 
+      (self.pack(fill = BOTH, expand = YES) worked fine, but better to be 
+      completely consistent, which means making the root window also be gridded
 '''
 ''' Known issues:
     -Changing the scale should cancel-and-reschedule drawplanets immediately
@@ -26,7 +32,6 @@
 '''
 
 from tkinter import *
-from tkinter import ttk
 import sys
 
 def calcpoints(pts, mult, center, func):
@@ -64,6 +69,9 @@ def calcpoints(pts, mult, center, func):
 class Display(Frame):
     ''' manages the orrery display. See description above '''
     def __init__(self, controller):
+        ''' Initializes the Display instance. It is ecpected that the 
+            controller instance has a root member which is a Tk instance
+        '''
         Frame.__init__(self, controller.root)
         self.ctrl = controller
     
@@ -74,7 +82,8 @@ class Display(Frame):
         vch = 3200                        # canvas height
         self.makewinframe(screen, vcw, vch)
         self.maketopframe()
-        self.pack(fill = BOTH, expand = YES)
+        self.ctrl.root.grid_rowconfigure(0, weight = 1)
+        self.ctrl.root.grid_columnconfigure(0, weight = 1)
 
         self.scalefactor=1.0
         self.span = self.ctrl.getlargestspan()
@@ -154,10 +163,9 @@ class Display(Frame):
         sunrad = self.sundim * self.scalefactor
        
         nlst = self.ctrl.getorbits()
-        plst = self.ctrl.getplanetsdata()
         self.canvas1.delete('orbit', 'sun')
         olst = []
-        for i, o in enumerate(nlst):
+        for o in nlst:
             olst.append(self.canvas1.create_polygon(o, fill = 'black', 
                 outline = 'red', width = 1, tags = 'orbit', smooth = 1))
         self.canvas1.create_oval(self.center[0]-sunrad, self.center[1]-sunrad, \

@@ -5,13 +5,15 @@
     second item in the colon-seperated configuration string.
     It currently does not collect error codes.
 '''
+''' Changes
+    01/31/2018
+    -Deleted commented-out code
+'''
+   
 import os
 
 pdata = []
 os.makedirs('bin', exist_ok=True)
-#except OSError as e:
-#    if e.errno != errno.EEXIST:
-#        raise
 with open('config/planet_config', 'r') as cf:
     pdata = list(cf)
 
