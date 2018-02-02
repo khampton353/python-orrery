@@ -28,14 +28,14 @@
     2/1/2018
     - added support for 'moving' a planet instead of deleting and redrawing
       every time; the later is only needed when the scale changes via zooming
+    2/1/2018
+    - Add event cancellation for zooming and quitting 
+    - Better handling of exiting and when the user closes the window so that
+      Tk/Tcl issues are managed
 '''
 ''' Known issues:
     -Changing the scale should cancel-and-reschedule drawplanets immediately
      instead of waiting the for the old interval to complete first
-    -zooming and exit handling should also cancel events, and destroy() logic 
-     should handle the disconnect between what tkinter thinks the state of 
-     callbacks is and what tcl sees. Sometimes exiting results in an exception 
-     or error message because of that.
     -Setting the initial viewing position should be better linked to window 
      geometry
 '''
@@ -102,6 +102,7 @@ class Display(Frame):
         self.speed.set(4)
 
         self.sundim = 13                  #sun relative size//100          
+        self.afterid = None
         self.draworbits()
         self.drawplanets()
 
@@ -143,8 +144,9 @@ class Display(Frame):
         ''' make the user cmds frame '''
         self.topfr = Frame(self, bg='white')
         self.keepdrawing = True
+        self.ctrl.root.protocol("WM_DELETE_WINDOW", self.destroy_)
         self.exit = Button(self.topfr,text = 'Exit', \
-                command = self.ctrl.root.destroy)
+                command = self.stopdrawing)
         self.speedlabel = Label(self.topfr, text = '     Orbit speed:', \
                 justify='right',\
                 bg='white') #keep the slider slim, precede with title
@@ -163,14 +165,38 @@ class Display(Frame):
         self.zo.grid(row=0, column=5)
         self.topfr.grid(row=2, column=0, sticky=E+W)
 
+
+    def destroy_(self):
+        ''' tknter and tcl can get out of sync when tcl thinks an after() or
+            after_cancel() command has command has been completed but tkinter 
+            doesn't. The problem doesn't occur on the second call to destroy() 
+        '''
+        try:
+            self.ctrl.root.destroy()
+        except TclError as te:
+            #print('err', te)
+            self.ctrl.root.destroy()
+
+
+    def stopdrawing(self):
+        ''' exit after drawing has stopped '''
+        self.keepdrawing = False
+        if self.afterid:
+            self.after_cancel(self.afterid)
+        self.destroy_()
+
+
+
     def draworbits(self):
         ''' called during initialization and when the zoom factor changes, 
             this function updates the geometry and redraws the orbits
         '''
+        if self.afterid:
+            self.after_cancel(self.afterid)
+            self.afterid = None
+
         self.ctrl.setgeometry(self.mult * self.scalefactor, self.center, calcpoints)
- 
         sunrad = self.sundim * self.scalefactor
-       
         nlst = self.ctrl.getorbits()
         self.canvas1.delete('orbit', 'sun')
         olst = []
@@ -191,6 +217,7 @@ class Display(Frame):
             p['MOVE'] == None when the planet has to be created or recreated 
             due to scaling changes.
         '''
+        self.after_id = None
         pscale = .1
         rad = 0.0
         plst = self.ctrl.getplanetsdata()
@@ -214,8 +241,10 @@ class Display(Frame):
                             p['DRAW'][1]-rad, p['DRAW'][0]+rad, \
                             p['DRAW'][1]+rad, fill = p['COLOR'],\
 			    tags = ('planet', p['NAME']), width = 2)
+        if not self.keepdrawing:
+            return
         per = self.speed.get()
-        self.canvas1.after(self.cycle_periods[per], \
+        self.afterid = self.canvas1.after(self.cycle_periods[per], \
                 self.drawplanets)
 
     #todo, add mousewheel zoom support, consider limits on zooming
