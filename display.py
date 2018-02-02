@@ -25,10 +25,19 @@
     - use grid manager for all geometry management 
       (self.pack(fill = BOTH, expand = YES) worked fine, but better to be 
       completely consistent, which means making the root window also be gridded
+    2/1/2018
+    - added support for 'moving' a planet instead of deleting and redrawing
+      every time; the later is only needed when the scale changes via zooming
 '''
 ''' Known issues:
     -Changing the scale should cancel-and-reschedule drawplanets immediately
      instead of waiting the for the old interval to complete first
+    -zooming and exit handling should also cancel events, and destroy() logic 
+     should handle the disconnect between what tkinter thinks the state of 
+     callbacks is and what tcl sees. Sometimes exiting results in an exception 
+     or error message because of that.
+    -Setting the initial viewing position should be better linked to window 
+     geometry
 '''
 
 from tkinter import *
@@ -177,24 +186,33 @@ class Display(Frame):
         ''' The movement engine for the planets. at cycle_periods intervals it
             asks the planets for their new positions until keepdrawing changes
             Note that zooming and speed changes will always be reflected in the
-            next cycle. Also, the planet object may indicate that the planet 
-            should maintain its previous position perhaps because of 
-            insufficient movement
+            next cycle. A planet description dictionary won't be appended to 
+            the list if there is insufficient movement from the last position.
+            p['MOVE'] == None when the planet has to be created or recreated 
+            due to scaling changes.
         '''
         pscale = .1
         rad = 0.0
         plst = self.ctrl.getplanetsdata()
         for p in plst:
-            if p['DRAW']:
+            #print(p['NAME'], p['DRAW'], p['MOVE'])
+            if p['MOVE']:
+                #p['MOVE'] is a tuple of x and y move deltas
+                self.canvas1.move(p['PLANET'], p['MOVE'][0], p['MOVE'][1])
+                if p['RING']:
+                    self.canvas1.move(p['RING'], p['MOVE'][0], p['MOVE'][1])
+            else:
                 self.canvas1.delete(p['NAME'])
                 rad = self.scalefactor * pscale * p['SIZE']
-                self.canvas1.create_oval(p['XLOC']-rad, p['YLOC']-rad, \
-			p['XLOC']+rad, p['YLOC']+rad, fill = p['COLOR'],\
-			tags = ('planet', p['NAME']), outline = p['COLOR'])
+                p['PLANET'] = self.canvas1.create_oval(p['DRAW'][0]-rad, \
+                        p['DRAW'][1]-rad, \
+                        p['DRAW'][0]+rad, p['DRAW'][1]+rad, fill = p['COLOR'],\
+                        tags = ('planet', p['NAME']), outline = p['COLOR'])
                 if p['RING']:
                     rad = 1.5 * rad
-                    self.canvas1.create_line(p['XLOC']-rad, p['YLOC']-rad, \
-			    p['XLOC']+rad, p['YLOC']+rad, fill = p['COLOR'],\
+                    p['RING'] = self.canvas1.create_line(p['DRAW'][0]-rad, \
+                            p['DRAW'][1]-rad, p['DRAW'][0]+rad, \
+                            p['DRAW'][1]+rad, fill = p['COLOR'],\
 			    tags = ('planet', p['NAME']), width = 2)
         per = self.speed.get()
         self.canvas1.after(self.cycle_periods[per], \
@@ -209,4 +227,5 @@ class Display(Frame):
         '''
         self.scalefactor *= 2 if val else .5
         self.draworbits()
+        self.canvas1.after_idle(self.drawplanets)
 

@@ -15,8 +15,21 @@
            a position on the orbit to its parent planet object when the 
            planet needs to know its current positon. It also returns the 
            entire list when the View wants to draw an orbit.
-
 '''
+''' Changes:
+    2/1/2018
+    -Move the planet instead of recreating it unless the geometry has been set 
+     or changed.
+    -Don't return the planet object for display unless it has moved far enough 
+     to be worthwhile
+    -Support prorated movement for planets that have sample intervals > 1
+    -simplify getpoints(); it doesn't need to get more than 1 point at a time.
+''' 
+''' Known issues:
+    - The distance used to determine whether a planets movement is noteable is 
+      hard-coded; this should probably be tied to screen geometry
+'''
+
 import pickle
 import math
 from collections import namedtuple
@@ -43,7 +56,7 @@ class Orbit():
         '''
         self.orbit = args[-1](pts, *args) 
 
-    def getpoints(self, idx = 0, count = 1, lst = None):
+    def getpoints(self, idx = 0, lst = None):
         '''return the current values for the points selected. Two values 
            will be returned for each point. lst = None means return the 
            whole list (suitable for drawing the orbit). Allow an index error 
@@ -56,15 +69,8 @@ class Orbit():
         if not lst:
             return self.orbit
         ix = idx * 2
-        for i in range(count):
-            if idx + i == self.cpoints:
-                ix = 0
-            j = i*2
-            lst[j] = self.orbit[ix]
-            lst[j+1] = self.orbit[ix+1]
-            ix += 2
-
-        
+        lst[0] = self.orbit[ix]
+        lst[1] = self.orbit[ix + 1]
 
 
 class Planet():
@@ -80,7 +86,7 @@ class Planet():
             self.pdata = ps.Orbitdata(*pickle.load(ifile))
         self.desc = {'NAME' : self.name, 'COLOR' : info.color, \
                 'SIZE' : float(info.relativesize.strip()),\
-                'RING' : info.other.startswith('ring')}
+                'RING' : info.other.startswith('ring'), 'PLANET' : None}
         self.xtra = info.other #currently, only ring  (see self.desc)
         #convert minutes between samples to days
         self.interval = int(self.pdata.sampleinterval)//1440 
@@ -89,37 +95,76 @@ class Planet():
                 self.pdata.orbit #interleaved x and y coordinates for canvas
         #icurr*2 = x coord in points where planet should initially be placed
         self.icurr = self.pdata.istart  
-        self.cpoints = len(self.points) / 2 #count x-y pairs
+        self.cpoints = int(len(self.points) / 2) #count x-y pairs
         self.orbitobj = Orbit(self.cpoints)
-        self.locations = [None]*2    #retrieve current x-y position from orbit
-        ''' the following items are used to manage redrawing 
-            when this planet interval isn't the same as the interval of the 
-            planet with the smallest orbit (currently assumed to be 1)
-            Note the ratio between this planet's interval and that of the 
-            smallest planet interval can be used to prorate movement, but it 
-            is complex and for now has been removed.
+        self.locations = [None]*4    #retrieve current x-y position from orbit
+        ''' the following items as well as the last two entries in 
+            self.locations are used to manage redrawing when this planet 
+            sampling interval isn't the same as the interval of the planet 
+            with the smallest rate (currently assumed to be 1)
         '''
         self.inc = 0     # ticks to increment, for now, 0 or 1
         self.incidx = 0  # tick number, between 0 and self.interval - 1
-
+        self.xinc = 0
+        self.yinc  = 0
     
     def getplanetdata(self):
-        ''' returns the dictionary with a current description of planet state 
-            including where to draw it.
+        ''' updates the planets description dictionary with a current 
+            description of planet location state 
+            Returns: the value of the dictionary's 'MOVE' key. This indicates
+                     to the caller whether the planet should be drawn, moved, 
+                     or ignored.   
+            Note that there is an effort to improve smoothness and performance 
+            by not passing the planet description back for display if it
+            hasn't moved far enough. The determination of 'far enough' should 
+            be programmatically calculated but for now is hard-coded to being 
+            at least 1 pixel
         '''
-        if  self.incidx == 0: 
+        if self.locations[0] == None:
+            #geometry has just been set or changed
+            self.orbitobj.getpoints(self.icurr, self.locations)
+            self.icurr = (self.icurr + 1) % self.cpoints
+            self.desc['DRAW'][0] = self.locations[0]
+            self.desc['DRAW'][1] = self.locations[1]
+            self.desc['MOVE'] = None
+            self.incidx = 0
+        elif self.incidx == 0: 
+            #time to get the next location on the orbit
             self.incidx += self.inc
-            self.orbitobj.getpoints(self.icurr, 1, self.locations)
-            self.desc['XLOC'] = self.locations[0]
-            self.desc['YLOC'] = self.locations[1]
-            self.desc['DRAW'] = True
-            self.icurr += 1
-            if self.icurr == self.cpoints:
-                self.icurr = 0
+            self.orbitobj.getpoints(self.icurr, self.locations)
+            self.icurr = (self.icurr + 1) % self.cpoints
+            self.xinc = (self.locations[0] - self.desc['DRAW'][0])/self.interval
+            self.yinc = (self.locations[1] - self.desc['DRAW'][1])/self.interval
+            if abs(self.xinc) > 1.0 or abs(self.yinc) > 1.0: #make 1.0 a var?
+                self.desc['MOVE'] = (self.xinc, self.yinc,)
+                self.desc['DRAW'][0] += self.xinc
+                self.desc['DRAW'][1] += self.yinc
+            else:
+                #not a big enough distance to be worth moving
+                self.desc['MOVE'] = (0, 0,)
+                #set last 2 entries in self_locations to where self should be
+                self.locations[2] = self.desc['DRAW'][0] + self.xinc
+                self.locations[3] = self.desc['DRAW'][1] + self.yinc
         else:
+            # in between samples, calculate a prorated point on the orbit
             self.incidx = (self.incidx + self.inc) % self.interval
-            self.desc['DRAW'] = False
-        return self.desc
+            if abs(self.xinc) > 1.0 or abs(self.yinc) > 1.0:
+                #incrementas are big enough, self.desc['MOVE'] can stay the same
+                self.desc['DRAW'][0] += self.xinc
+                self.desc['DRAW'][1] += self.yinc
+            else:
+                self.locations[2] += self.xinc
+                self.locations[3] += self.yinc
+                if abs(self.locations[2] - self.desc['DRAW'][0]) > 1 and \
+                        abs(self.locations[3] - self.desc['DRAW'][1]) > 1:
+                    self.desc['MOVE'] = \
+                            (self.locations[2] - self.desc['DRAW'][0],\
+                            self.locations[3] - self.desc['DRAW'][1],)
+                    self.desc['DRAW'][0] = self.locations[2]
+                    self.desc['DRAW'][1] = self.locations[3]
+                else:
+                    self.desc['MOVE'] = (0, 0,) #Nothing to draw this time
+        return self.desc['MOVE']
             
 
     
@@ -143,17 +188,15 @@ class Planet():
                   factor
         '''
         self.orbitobj.setorbit(self.points, *args)
-        if self.locations[0] == None: #first time
-            self.orbitobj.getpoints(self.icurr, 1, self.locations)
-            self.desc['XLOC'] = self.locations[0]
-            self.desc['YLOC'] = self.locations[1]
+        self.locations[0] = None  #Triggers 'DRAW'
+        self.desc['DRAW'] = [0, 0]
 
 
     def getorbit(self):
         ''' return the list of coordinates that currently reflects the orbit 
             based on the current geometry
         '''
-        return self.orbitobj.getpoints(0,0)
+        return self.orbitobj.getpoints(0)
 
     def getspans(self):
         ''' return the tuple of coordinates representing the orbit shape 
@@ -180,7 +223,7 @@ class Planets():
         '''
         self.ospan = 0.0
         self.pdata = pdata
-        self.smallinterval = 1000 #articial but > largest acceptible value
+        self.smallinterval = 1000 #artificial but > largest acceptible value
         self.planets = []
         for itm in pdata:
             if itm[0] == '#':
@@ -234,13 +277,12 @@ class Planets():
     def getplanetsdata(self):
         ''' ask Planets for a list of dictionaries representing each planet
             at its current position
-
-            todo, this gets called all the time, need to create it and then
-            just let the planet instances update it
+            returns: a list with planet description dictionaries which are
+            appended if there is something to move (['MOVE'][0] != 0) or 
+            draw (p.getplanetdata() == None).  
         '''
-        data = []
-        for p in self.planets:
-            data.append(p.getplanetdata())
+        data = [p.desc for p in self.planets if \
+                (not p.getplanetdata() or p.desc['MOVE'][0] != 0)]
         return data
 
 
