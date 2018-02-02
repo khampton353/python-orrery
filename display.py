@@ -32,10 +32,12 @@
     - Add event cancellation for zooming and quitting 
     - Better handling of exiting and when the user closes the window so that
       Tk/Tcl issues are managed
+    2/1/2018
+    - Cancel and reschedule drawplanets() events immediately whe changing the 
+      speed instead of waiting for the cycle period to expire
+    - minor improvements to the speed slider
 '''
 ''' Known issues:
-    -Changing the scale should cancel-and-reschedule drawplanets immediately
-     instead of waiting the for the old interval to complete first
     -Setting the initial viewing position should be better linked to window 
      geometry
 '''
@@ -98,7 +100,8 @@ class Display(Frame):
         self.span = self.ctrl.getlargestspan()
         self.mult = (vcw-100) //self.span  #scale orbits to virtual screen
 
-        self.cycle_periods=(10000, 750, 500, 250, 100, 50, 20, 1)
+        #slide settings:0 is unused, 7 is unrealistic...
+        self.cycle_periods=(10000, 5000, 500, 250, 100, 50, 20, 5)
         self.speed.set(4)
 
         self.sundim = 13                  #sun relative size//100          
@@ -151,8 +154,8 @@ class Display(Frame):
                 justify='right',\
                 bg='white') #keep the slider slim, precede with title
         scalevar=IntVar()
-        self.speed = Scale(self.topfr, from_=0, to=7, variable = scalevar, \
-                activebackground='white', \
+        self.speed = Scale(self.topfr, from_=1, to=7, variable = scalevar, \
+                activebackground='white', command=self.chgspeed,  \
                 orient = 'horizontal', tickinterval=1)
         self.zi = Button(self.topfr, text='ZOOM IN',\
                 command = lambda:self.zoom(1), bg='white')
@@ -184,6 +187,17 @@ class Display(Frame):
         if self.afterid:
             self.after_cancel(self.afterid)
         self.destroy_()
+
+
+    def chgspeed(self, scl):
+        ''' when the slider speed is changed, cancel any pending drawplanets() 
+            events and reschedule immediately
+        ''' 
+        if self.afterid:
+            self.after_cancel(self.afterid)
+            self.afterid = None
+            if self.keepdrawing:
+                self.after_idle(self.drawplanets)
 
 
 
