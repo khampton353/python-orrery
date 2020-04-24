@@ -1,6 +1,7 @@
 ''' orrery.py
     The 'Controller' part of the Solar System model implemented using the MVC
-    pattern. It creates the 'Model' Object, an instance of class 'Planets' that     contains all data related to planets and orbits, followed by the 'View' 
+    pattern. It creates the 'Model' Object, an instance of class 'Planets' that
+    contains all data related to planets and orbits, followed by the 'View' 
     object, an instance of class Display, which to the degree possible 
     contains and hides details about the graphics mechanism. (The caveat is 
     that cartesian coordinates are used to represent planet positions, and 
